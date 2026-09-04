@@ -89,6 +89,7 @@ Start with **[`PATTERNS.md`](PATTERNS.md)**, the platform-agnostic rules (idempo
 ### AI
 | Platform | What bites |
 |---|---|
+| [Claude Code (agent tooling)](AI/claude-code.md) | Claude in Chrome silently dead in Arc (connects, every command times out), dedicated Chrome agent-browser pattern, cold-start launch from terminal |
 | [Claude API (Anthropic)](AI/claude-api.md) | JSON code-fence stripping, Hebrew transliteration fallback, maxRetries bump |
 
 ### Cross-cutting
