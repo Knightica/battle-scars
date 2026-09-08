@@ -13,3 +13,6 @@
 # Local scratch
 .env
 .env.*
+
+# Session log stays local (public repo)
+SESSION_LOG.md
