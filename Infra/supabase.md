@@ -14,6 +14,12 @@
 
 ## Scars & gotchas
 
+- **PostgREST silently caps EVERY select at 1000 rows.** No error, no warning, arbitrary order. `from(t).select("*")` on a table with more than 1000 rows returns exactly 1000. This caused a resend storm on a lead-nurture automation: overflow rows past the cap were invisible to the poller, the leads looked "never enrolled" even though they were fully processed, and a batch of recipients got the same message dozens of times each over several days before anyone noticed. Any full-table read whose completeness gates a side effect (send, charge, create) must paginate with an ordered `.range()` loop, or filter down to the working set with `.in()` instead of reading everything.
+
+- **`upsert(..., { ignoreDuplicates: true })` can mask a truncation bug like the one above.** The re-insert of an already-existing row no-ops silently instead of erroring, so a broken completeness-read loop can run green for days with zero alerts. Never pair a completeness-dependent read with conflict-swallowing writes; let the conflict throw so a broken assumption surfaces immediately.
+
+- **Pagination without ORDER BY skips or duplicates rows.** `.range()` pages over an unordered select are not stable while the underlying table changes between page fetches. Always order by a unique column (the primary key) when paging.
+
 - **Self-service DDL + key retrieval via the Management API (PAT in a secret store)** - The Supabase MCP is unauthenticated for DDL, but a Personal Access Token can live in a secret store (e.g. the OS keychain). With it you can run migrations (`POST /v1/projects/{ref}/database/query` with a `User-Agent` header) AND fetch the service-role key (`GET /v1/projects/{ref}/api-keys?reveal=true`, filter `.name=="service_role"`) entirely yourself, no human paste. Write the fetched key straight into the target `.env`/config without echoing it to the terminal (only its length) so it never lands in a transcript.
 
 - **Org membership is account-wide, not per-project** - Adding a member to a Supabase org grants access to *every* project in that org; there is no per-project member scoping on Free/Pro plans (project-scoped roles are Team/Enterprise only). Inviting an external developer to an org that holds unrelated projects would expose all of those databases to them. Keep unrelated projects in isolated orgs, or skip the dashboard invite and hand the dev just the service-role key + connection string for the one project they need.
@@ -52,6 +58,9 @@
 
 ## Conclusions / best practices
 
+- Treat `rows.length === 1000` (or any suspiciously round number equal to the PostgREST cap) as truncation and fail loudly, not as "that's just how many rows there are."
+- State tables that grow forever (one row per lead/sale/event) WILL cross 1000 rows eventually; assume it from day one and paginate any completeness-dependent read.
+- Append-only event ledgers are valuable for forensics; every automation that sends or charges something should write one.
 - Always run `npx supabase gen types typescript --project-id <ref>` immediately after applying a migration. Never skip it.
 - Always include a `User-Agent` header on Management API calls.
 - Use private buckets by default for any file with PII or contractual content. Public buckets are opt-in only.

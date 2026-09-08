@@ -2,7 +2,6 @@
 
 **Use for:** Issuing Israeli tax invoice-receipts (חשבונית מס/קבלה, type 320) after payment; programmatic document generation via REST API
 **Status:** Active
-**Last validated:** 2026-07-06
 
 ## Setup & access
 
@@ -20,6 +19,22 @@ Legacy auth (works only until 2026-07-15): `POST https://api.greeninvoice.co.il/
 - Credentials: `MORNING_API_KEY` + `MORNING_API_SECRET` in env.
 
 ## Scars & gotchas
+
+- **Read endpoints worth knowing for reporting** - `POST /documents/search` with an empty body returns every document ever issued, paged (`pageSize` up to 100, response carries `pages`); each item already includes `amount`, `vat`, `amountExcludeVat`, `documentDate`, `status`, `client.name`, so income summaries need no per-document fetch. `POST /expenses/search` filters on the VAT reporting month and its `fromDate`/`toDate` must be the first of the month (`YYYY-MM-01`), not arbitrary dates. `GET /businesses/me` is not in the public OpenAPI spec but works on the new OAuth token (returns `name`, `taxId`, `exemption`, `settings`).
+
+- **The API has no webhook management - re-pointing a webhook is dashboard-only** - `GET /webhooks`, `/account/webhooks` and `/hooks` all return `404`. There is no programmatic way to list, create or re-point a webhook subscription, so any URL change is a manual dashboard action in the account owner's login. Plan for that when a domain migration invalidates a webhook target.
+
+- **One account-level `payment/received` webhook fires for *every* payment, including subscription renewals** - the subscription is per-topic for the whole account, not per product or per payment page. A webhook wired for one-time event purchases can therefore also receive monthly membership renewals on the same fixed-price recurring product (`channel: "recurring-charge"`) months after the original purchase, and a downstream handler that doesn't branch on this will process them as new conversions: junk CRM rows plus a welcome message to people who have been subscribers for months. Branch on `body.channel` and `body.productId`, or gate on your own CRM state ("only greet when the subscription row was *created* this run"), before doing anything user-visible.
+
+- **Legacy `id`/`secret` token auth still worked past the announced cutoff date** - `POST /account/token` with the old API key pair returned `200` and a valid bearer token nearly a month after legacy auth was supposed to die. Useful to know when triaging an old integration, but do not build on it: treat it as borrowed time and migrate to OAuth.
+
+- **A document can never be dated before the last document already issued (errorCode 2405)** - `errorCode 2405` / `התאריך שנבחר עתידי או מוקדם מדי לסוג מסמך זה` does not mean "too old" in the fixed-lookback sense. The valid window is exactly `[documentDate of the most recent document of that type, today]`. Israeli sequential numbering (מספור רציף) requires document numbers to run in date order, so once receipt N exists dated D, nothing can ever be issued before D. Probed live on a fresh account: with a single receipt dated day X, every date between the previous document and day X was rejected, day X through today was accepted, and the day after today was rejected as future. **Consequence for design: issuing late is lossy.** A monthly retainer receipted on the day of payment carries the true date; catching up two months later makes the true date permanently unreachable. Schedule the issuing rather than batching it.
+
+- **`POST /documents/preview` validates a document body without creating it** - Same body, same error codes, returns a base64 PDF in `file` on success. Confirmed that repeated preview calls leave the document count unchanged. This is the only safe way to test whether a date, client, or document shape will be accepted, since a real `POST /documents` is irreversible (a wrong document needs a credit note, not a delete). Always preview before issuing anything whose date or shape is uncertain.
+
+- **The create response is thinner than the read response** - `POST /documents` returns `id`, `number`, `type` and `url`, but **not** `documentDate` or `amount`. Code that reads those straight off the create response gets `undefined`, which then silently propagates into filenames and DB rows (cost a mis-named `...-undefined.pdf` archived to storage). Either fall back to the values you submitted, or re-fetch with `GET /documents/{id}` before using them.
+
+- **Osek patur accounts: type 400 only, and no VAT math at all** - Check `GET /businesses/me` for `exemption: true` plus `settings.documentVatType: 0` / `rowVatType: 0`. An osek patur **cannot** issue a חשבונית מס or a חשבונית מס/קבלה (320) - only a קבלה (**type 400**). On a 400 the money lives in the `payment[]` array and `income[]` is empty, since a receipt acknowledges a payment rather than itemizing a sale. None of the VAT guidance elsewhere applies: no gross-to-net conversion, no `rounding` compensation, feed the actual amount. Do not copy a 320 implementation onto an exempt account.
 
 - **Some accounts add VAT on top of entered prices** - if the account is configured VAT-on-top, do NOT enter gross (customer-paid) amounts. Feed the NET unit price and let Morning compute VAT. Formula: `netUnit = Math.round((gross / (1 + 0.18)) * 100) / 100`. With `rounding: true` in the document body, sub-agora drift is absorbed so the issued total matches the charged amount exactly. Example: ₪100 gross -> net price `Math.round((100 / 1.18) * 100) / 100`. For quantity 2 at ₪200 total gross: quantity 2, price `netUnit(200 / 2)` each. Recommendation: feed net prices in code, do not touch the account-wide "prices include VAT" toggle.
 
@@ -48,7 +63,3 @@ Legacy auth (works only until 2026-07-15): `POST https://api.greeninvoice.co.il/
 - Fetch a fresh JWT per task run; on the new OAuth endpoint read it from `accessToken` (1h validity); on legacy, fall back to the `authorization` response header if `data.token` is missing.
 - New integrations: always start from the new OAuth auth (see Setup & access), never from a legacy `getToken()`.
 
-## Doc log
-
-- **2026-07-06** - 2026 API migration documented (new OAuth token endpoint at api.morning.co, `accessToken` response field, legacy blocked 2026-07-15). Verified against developers.morning.co OpenAPI v2.0.0. Bumped Last validated.
-- **2026-06-25** - Initial consolidation: auth, VAT formula, document type 320 body shape, payment row construction, rounding, and webhook behavior notes.

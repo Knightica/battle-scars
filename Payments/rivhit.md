@@ -2,7 +2,6 @@
 
 **Use for:** Israeli invoice generation (חשבונית מס קבלה and credit notes); automated post-payment receipts triggered by PayPlus IPN
 **Status:** Active
-**Last validated:** 2026-07-06
 
 ## Setup & access
 
@@ -32,8 +31,3 @@
 - The primary integration risk is PayPlus callback misconfiguration, not Rivhit itself. Follow the single-callback-source rule in payplus.md.
 - For Arbox integrations: user mutations go through Arbox or the Rivhit dashboard; the Rivhit users API is read-only (405 on writes).
 
-## Doc log
-
-- **2026-07-06** - Added the allocation-number (מספר הקצאה) scar: driven by the customer `id_number` on `Document.New`, requested automatically by Rivhit for qualifying invoices. Confirmed the field against the live Document.New API reference; bumped Last validated.
-- **2026-06-25** - Enriched with integration history: double-invoice incident detail, document-type gotcha, credit-note refund pattern, Arbox users API 405.
-- **2026-06-25** - Initial consolidation from a duplicate-invoice post-mortem.

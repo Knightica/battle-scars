@@ -2,7 +2,6 @@
 
 **Use for:** Meeting scheduling detection, cancellation handling, deduplication against Google Calendar events
 **Status:** Active
-**Last validated:** 2026-04-19
 
 ## Setup & access
 
@@ -26,7 +25,3 @@
 - Cancellation handling must branch on who cancelled. Invitee cancels get a draft reschedule email. Manual (host) cancels get a silent Calendly + GCal delete with `sendUpdates: "none"`.
 - Always capture and persist the cancellation reason before acting on it. It drives the personalized reschedule email.
 - Design Calendly integrations around polling, not webhooks, unless you can guarantee payload completeness for your CRM lookup needs.
-
-## Doc log
-
-- **2026-06-25** - Initial consolidation.

@@ -14,6 +14,14 @@
 
 ## Scars & gotchas
 
+- **A GA4 key event (conversion) can be created for an event name GA4 has never seen** - `keyEvents.create` does not require the event to have fired. The Admin UI only offers names it has already recorded, which makes it look like a never-fired event cannot be marked as a conversion, and belief in that cost days of "waiting for it to fire first" before someone tried the API directly. It is a UI limitation, not an API one. `POST https://analyticsadmin.googleapis.com/v1beta/properties/{id}/keyEvents` with `{"eventName": "schedule", "countingMethod": "ONCE_PER_EVENT"}` succeeds against an unseen name, and the first real occurrence is then counted as a conversion from the start rather than being lost to reporting. Auth: a service account with domain-wide delegation and the `analytics.edit` scope, impersonating a user who admins the property. Mark planned conversions at build time, before launch, so the very first one counts.
+
+- **The Realtime API double-reports Measurement Protocol events across minute buckets - never debug duplicates with it** - A single MP `POST /mp/collect` showed as `eventCount: 2` in `runRealtimeReport`, split across two adjacent `minutesAgo` buckets. Proven with a control: one throwaway event name sent exactly once, reported twice. Chasing this cost an hour of hunting for a phantom second sender. The standard (non-realtime) report is authoritative and showed the true count of 1. Use realtime only to confirm an event ARRIVES; use `runReport` to confirm HOW MANY.
+
+- **`/debug/mp/collect` validates a stream's measurement id + MP secret without recording anything** - The best way to prove a new data stream's server-side credentials before any real traffic: same body as `/mp/collect` but returns `validationMessages`. An empty array means the id/secret pair and payload are accepted. Nothing lands in the property, so it costs the stream no junk data - much better than firing a fake conversion.
+
+- **Two data streams in one property do NOT share an identity space** - Splitting an apex domain and its ccTLD or subdomain sibling into separate streams (same property) keeps key events, the Ads link and reporting unified, but a visitor crossing the two domains counts as two users and two sessions, and each domain shows as a referral in the other's stream. Cross-domain stitching needs both domains on ONE measurement id, which defeats the split. Don't promise cross-domain continuity as a benefit of the single-property choice.
+
 - **The Measurement Protocol silently DROPS an event with a malformed `session_id` - and still answers 2xx.** MP has no meaningful success signal on the production endpoint: a bad payload returns the same `204` as a good one, so any "did the POST succeed?" check reports green while the event is discarded. This cost one site every server-side conversion it ever sent. The trigger was Google shipping **two formats** for the `_ga_<STREAM>` session cookie:
 
   | Format | Value | Delimiter |
@@ -43,6 +51,10 @@
 
 - **Custom medium `pr` does not auto-appear in GA4 default Channels - shows as "Unassigned"** - GA4's default channel group does not include custom mediums like `pr`. Traffic is captured correctly but falls into "Unassigned" in the Channels report. GA4 does not allow editing the default channel group. Fix: Admin -> Data display -> Channel groups -> create a new group with rule `Session medium matches regex ^(pr|press|earned)$` -> channel name "PR / Earned Media". In reports and explorations you must select this custom channel group as the dimension; the default Channels report keeps showing "Unassigned" regardless. Custom channel groups apply retroactively within the data-retention window, so existing PR sessions backfill automatically.
 
+- **A custom channel group REPLACES the default rather than extending it - clone the default rules or everything lands in "Unassigned"** - The obvious build is a one-rule group for your custom mediums. Do that and the group is useless: it is a self-contained grouping dimension, so every session that does not match a rule (i.e. all your organic, direct, social and email traffic) falls into "Unassigned" *within that group*. The cheap fix is that `GET v1alpha/properties/{id}/channelGroups` returns the **system "Default channel group" with its full rule set** (19 rules as of writing), and each rule is just `eachScopeDefaultChannelGroup EXACT "<name>"`. Read it, prepend your own rule, POST the concatenation - a drop-in replacement of the default report plus your channel, in one call. Rules are evaluated in order, so the custom rule must come first.
+
+- **`channelGroups` filters use `eachScopeMedium`, and the field list is not the Data API's** - Building a custom channel rule, `eachScopeManualMedium` (the name the GA4 UI's "Session manual medium" implies) 400s with `Referenced dimension 'eachScopeManualMedium' does not exist`. The working field for medium is **`eachScopeMedium`**. Also: `stringFilter` here has **no `caseSensitive` field** even though the Data API's does - sending it fails with `Unknown name "caseSensitive"`. Match types that do work: `EXACT`, `FULL_REGEXP`. Auth is the same DWD service account + `analytics.edit` scope used for key events.
+
 - **Lead definition "form submit OR WA click" double-counts leads vs CRM truth** - When a Lead event fires on both form submits and WhatsApp button clicks, the same event feeds the ad platform Pixel/CAPI and inflates ad-platform-reported Leads well above true CRM lead count. For lead-gen campaign evaluation, use CRM lead count as ground truth, not the ad platform's Lead metric.
 
 - **Subdomain cookie sharing removes the cross-domain linker requirement - but verify the tag is present** - All subdomains of a root domain share the root cookie, so GA4 session attribution (including UTM source/medium carried from the landing page) persists through funnel subdomains without a cross-domain linker, provided each funnel subdomain fires the same GA4 stream (`G-XXXXXXX`). Verify the GA4 tag is actually live on each funnel subdomain before trusting PR -> conversion attribution paths; the cookie sharing only helps if the tag is there.
@@ -59,9 +71,3 @@
 - **GA4 is the middle-layer source of truth** in the three-source stack (store = ground truth, GA4 = last-click, ad platform = platform claim). Normal GA4/store order coverage: 85-90%.
 - **UTM must be clean upstream (ad-account level) before GA4 attribution is trustworthy.** Don't spend time debugging GA4 channel grouping until the UTM source is fixed.
 - **Use MER, not GA4 revenue, for client-facing ROI.** GA4 is useful for funnel and traffic analysis; the cash number comes from the store.
-
-## Doc log
-
-- **2026-08-05** - Added the MP-silently-drops-malformed-`session_id` scar: the `_ga_<STREAM>` cookie moved from GS1 (dot) to GS2 (`$`, `s`-prefixed), a GS1 parser fed GA4 garbage, and every server-side conversion was discarded behind a 2xx. Parse both formats, emit bare digits, guard server-side, and validate against `/debug/mp/collect`.
-- **2026-06-25** - Initial consolidation.
-- **2026-06-25** - Merged additional analytics scars.

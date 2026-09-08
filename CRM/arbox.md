@@ -2,7 +2,6 @@
 
 **Use for:** Gym member + class scheduling backend - member records, class schedule, coach session reports
 **Status:** Active
-**Last validated:** 2026-06-25
 
 ## Setup & access
 
@@ -21,13 +20,14 @@
 
 - **`/v3/schedule` is GET; `registration_details` must be integer `1`; registrants are under `registration_Details` (capital D)** - Older flows POSTed to `/v3/schedule` and got `405 Method Not Allowed` (supported: GET/HEAD/PATCH). It is a **GET** with `location_id` + `from_date` + `to_date` (both dates required) as query params. `registration_details` must be the integer **`1`**, the string `"true"` returns `400 "registration details must be a boolean"`. Registrants come back under the key **`registration_Details`** (capital D), each with `full_name`, `phone`, `user_role` (filter out `staffMember`), `checked_in`. The window is capped at ~7 days; for a longer horizon, re-check on a rolling window rather than widening the range.
 
+- **`activeMembershipsReport` is a LIVE snapshot, not a time machine.** Passing a past `fromDate`/`toDate` does not reconstruct that date; memberships cancelled since then have vanished from the report. Historical paying-member counts must be rebuilt from multiple sources: current rows covering the date, plus `canceledMembershipsReport` rows covering it, plus renewal rows proven by that month's successful RECURRING charges in `transactionsReport`.
+
+- **manage.arboxapp.com profile-URL ids are a different id space than public-API `user_id`.** `/v3/users/{id}` exists and works for report user_ids (a 9-10M range), but UI profile ids (a much smaller number) 404 and appear in NO field of any public report or the full `/v3/users` list. There is no API path from a profile URL to a user; ask for name/phone instead.
+
+- **An invalid report name errors back the complete list of valid report names.** `GET /v3/reports/xx` returns a 400 whose message enumerates every `reportName` the account accepts, the fastest way to discover endpoints like `inactiveMembersReport`, `salesReport`, `renewalsReport`. Also: `transactionsReport` silently returns 0 rows for over-wide date ranges, query month by month.
+
 ## Conclusions / best practices
 
 - Normalize all phone numbers to digits-only `972XXXXXXXXX` before writing to Arbox or any downstream platform. Never embed `+`-prefixed values in template strings.
 - Treat the Arbox public API as read-only for member records. Plan fixes as manual dashboard actions or browser-automation scripts, not API calls.
 - Always paginate `classesSummaryReport` and `schedule` endpoints via `next_page_url`, and filter `status === "active"` to get clean session data.
-
-## Doc log
-
-- **2026-06-25** - Initial consolidation.
-- **2026-06-25** - Added `/v3/schedule` GET + integer-bool `registration_details=1` + `registration_Details` (capital D) scar from a session-confirm / session-reminder build. Bumped Last validated.

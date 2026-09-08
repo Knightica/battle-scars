@@ -14,6 +14,8 @@
 
 ## Scars & gotchas
 
+- **An "active" workflow whose trigger node is disconnected accepts webhooks with 200 and silently drops them.** A workflow showed `active: true`, its webhook returned 200 to every caller, and n8n logged each delivery as a **successful** execution. But the canvas had nothing wired from the trigger node to the next node, so only one node ever ran and the downstream call never fired. Real events over many days vanished with **zero** error executions, invisible to `n8n_executions(status: "error")` and to every failure-based alert. Detection: read `connections` in the workflow JSON (a severed trigger shows `"Webhook": {"main": [[]]}`), and treat `summary.executedNodes == 1` on a multi-node workflow as a red flag. If a bridge is meant to be off, **deactivate the workflow** rather than cutting a wire, so the state is legible.
+
 - **Public API keys are per-instance JWTs, a key from another instance 401s everywhere** - a valid-looking n8n API key (correct JWT: `iss:n8n`, `aud:public-api`, non-expiring) can return `401 unauthorized` on every `/api/v1` call. Cause: the key was generated on a **different** n8n instance than the one being called. The JWT is signed with the minting instance's secret, so the target rejects it. Fix: create the key **on the exact instance** you're calling (Settings -> n8n API on that host). Decode the JWT payload (`iss/aud/sub`) to confirm shape, but only the signing instance validates it.
 
 - **`require('crypto')` is blocked in the Code node sandbox** - Attempting to verify HMAC-SHA256 signatures inside a Code node fails: the task-runner sandbox does not allow `require('crypto')`. Fix: use the n8n Crypto node for all HMAC operations.
@@ -26,7 +28,7 @@
 
 - **Two forms on one page need a Code node normalizer** - When one webhook receives payloads from two different forms (e.g. a Lead Form with name + phone, and a Quiz Form with email + quiz fields), branch on a distinguishing field. Example: Lead Form payloads have a `name` field, Quiz Form payloads do not. A Code node normalizer routes each payload to the correct downstream task.
 
-- **Prefer env vars over hardcoding a signing secret in the Crypto node** - a secret hardcoded in the node gets baked into any exported workflow JSON you commit or share, turning the repo into a secret store. Tightly gated editor access can make the practical trust boundary look similar, but env vars keep exported JSON shareable and make rotation cheap. Never hardcode.
+- **A signing secret hardcoded in the Crypto node is a conscious trade-off, not a default** - it gets baked into any exported workflow JSON you commit or share, turning the repo into a secret store. It is defensible only when editor access is gated to one operator, the live workflow is managed via the API, and the committed JSON is treated as a historical record rather than a deployable artifact. Outside that narrow setup, keep the secret in an env var: exported JSON stays shareable and rotation stays cheap.
 
 - **"Double-`+`" phone formatting bug** - A payload string like `"+{{contact.phone}}"` prefixes a literal `+` onto a phone value that already stores `+972...`. Result: records written as `++972...` (dirty data). Fix: always strip any existing prefix before re-applying formatting: `.replace('+', '')` then prepend `+`. Never blind-concat formatting characters onto values that may already be formatted.
 

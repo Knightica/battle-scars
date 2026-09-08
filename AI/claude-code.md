@@ -16,6 +16,18 @@
 
 - **Uninstall, do not disable.** A disabled extension in the wrong browser keeps registering and can be picked as the target. Only after uninstalling it did the stale device entry disappear and Chrome register cleanly under a new device id.
 
+- **The "list connected browsers" tool wants you to prompt the user even with a single browser connected.** The tool description says to ask the user to pick a browser before any action. With exactly one local browser connected that prompt is dead weight and blocks an autonomous run: skip it and go straight to getting tab context (with create-if-empty). Only prompt when two or more browsers are listed.
+
+- **The agent Chrome caches `localhost` preview pages across navigations.** Re-rendering a file and navigating to the same URL can show the stale page. Bump a query param (`?v=N`) on every re-render; it does not matter whether the dev server itself busts the cache.
+
+- **A screenshot immediately after a navigate can fail with a script-injection timeout.** The page is still loading. Put a short wait (about two seconds) between navigate and screenshot in the same batch call; a batch stops on the first error, so the screenshot never runs otherwise.
+
+- **A headless `--screenshot` browser invocation can hang forever while the agent's own Chrome is already running**, even with a separate `--user-data-dir`. It completes in seconds when that Chrome is closed. When the agent Chrome is up, take screenshots through the extension (screenshot, scroll, screenshot) instead of shelling out to a second headless instance.
+
+- **When the browser extension is not connected, fall back to a real browser-automation library rather than guessing a fix from CSS alone.** A globally installed Playwright package ships a bundled WebKit build: launch it with `webkit.launch()` and a mobile device profile (e.g. `iPhone 13`) to get a real Safari-engine mobile render, not just Chromium. This mattered concretely on a mobile CSS bug reported via phone screenshots: a first fix was written from reading the CSS alone (a plausible-sounding Safari-only theory) and shipped wrong; only rendering the actual page in WebKit, against both a local dev server and the live preview URL, surfaced the real cause and proved the fix. If running from a scratchpad script with no local `node_modules`, import the library via its absolute install path.
+
+- **A page's own load-time deep-link/scroll logic can fight a script's manual `scrollIntoView`.** A homepage intro loader that restores scroll position itself once its animation finishes (honoring `location.hash` if present, else scrolling to top), asynchronously after the page's `load` event, will silently override a script's `element.scrollIntoView()` called right after `domcontentloaded`. Fix: navigate directly to the URL with the target `#hash` already in it, so the site's own loader does the scrolling correctly instead of a script fighting it from outside.
+
 ## Conclusions / best practices
 
 - Browser automation is the last resort. Anything with an API or MCP goes direct. The browser is for UI-only surfaces: payment provider dashboards, chat-automation builders, ad managers, one-off sites.

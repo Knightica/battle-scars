@@ -2,7 +2,6 @@
 
 **Use for:** Hosted-page payment links (standing orders, one-off charges) for Israeli merchants; IPN webhook for server-side payment confirmation
 **Status:** Active
-**Last validated:** 2026-08-01
 
 **TL;DR:** Auth header is `JSON.stringify({api_key, secret_key})`, not Bearer. The IPN webhook body is **sparse and unsigned - never trust it**: always phone home to `/PaymentPages/ipn` with the UID to get real status, and store *that* UID, not the dashboard row ID. Use **exactly one** callback channel (dashboard OR per-request `refURL_callback`), never both, or you double-issue invoices. Ship a manual "mark paid" button from day one.
 
@@ -22,6 +21,8 @@
 - **Authorization header is JSON-stringified, not Bearer** - The `Authorization` header must be `JSON.stringify({ api_key: apiKey, secret_key: secretKey })`. This is not a standard Bearer token. Getting this wrong gives an auth error with no other hint.
 
 - **IPN body is sparse and unsigned - never trust it alone** - The server-to-server IPN POST body does not contain authoritative status or the canonical subscription UID. Always phone home to `POST /PaymentPages/ipn` with the UID from the body to get the real status and the canonical UID. Real-world ghost-payment incident: a customer paid but their row stayed pending because the handler trusted the sparse body instead of verifying. PayPlus does not sign IPN callbacks at all (verified against the official PayPlus PHP SDK source; no signature header exists to validate), so phone-home verify is the only defense.
+
+- **Standing order with no charge at signup = no IPN at signup** - PayPlus fires the IPN on *charges*. A recurring standing-order page configured with no immediate charge (first charge scheduled for a later date) approves the order with zero transactions, so the webhook never hears about the signup: the row stays in the hidden "awaiting payment" state while PayPlus shows the order approved. Fix is pull, not push: store the `page_request_uid` from `generateLink`, then verify it via `POST /PaymentPages/ipn { payment_request_uid }` on the customer's return to `refURL_success` and on every load of the admin queue; `status_code "000"` + `data.uid` is the canonical standing-order UID. Keep the webhook for the charges that follow.
 
 - **Response shape varies between data and transaction keys** - The `/PaymentPages/ipn` response may put `status_code` and `uid` under `data` OR under `transaction` depending on the payment type. Check both: `root.data ?? root.transaction`. `status_code === "000"` means success.
 
@@ -62,9 +63,3 @@
 - Ensure your web framework or middleware does not rewrite or intercept `/api/*` paths before the webhook handler.
 - Build a manual mark-paid admin button from day one.
 
-## Doc log
-
-- **2026-08-01** - Added two refund scars: `RefundByTransactionUID` (works with the JSON auth header, partial refunds, external-invoicer credit note stays on you) and 403/1010 = IP allowlist on all endpoints (temporary-serverless-function workaround). Bumped Last validated.
-- **2026-06-26** - Added two scars: one page can back multiple funnels via per-request `amount` (but charge method is page-level), and gate record-creation/emails behind the verified IPN to avoid abandoned-cart orphans.
-- **2026-06-25** - Added IPN-unsigned confirmation (PHP SDK verified), Hosted Fields final iframe pattern, phone format rule, dual-layer duplicate guard, and company billing routing.
-- **2026-06-25** - Initial consolidation of PayPlus integration lessons: auth header format, response-shape handling, IPN hardening, and fail-closed posture.

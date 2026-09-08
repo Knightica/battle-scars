@@ -1,10 +1,9 @@
-# UTM Tagging Policy (Knightica standard)
+# UTM Tagging Policy
 
-**Use for:** Every campaign/placement link Knightica hands out - its own marketing and client engagements alike. One consistent scheme so GA4 attribution never fragments and any team member (or an agent generating a link on request) produces the same result.
+**Use for:** Every campaign/placement link a team hands out - owned marketing and client engagements alike. One consistent scheme so GA4 attribution never fragments and any team member (or an agent generating a link on request) produces the same result.
 
 **Status:** Active
-**Applies to:** knightica.com + all client GA4 properties
-**Last validated:** 2026-07-24
+**Applies to:** any site + all GA4 properties it feeds
 
 ---
 
@@ -20,7 +19,7 @@ Given a use case, produce the URL in five steps:
 
 Example use case -> link:
 > "LinkedIn ad for the summer webinar, landing on the contact page."
-> `https://knightica.com/contact/?utm_source=linkedin&utm_medium=paid_social&utm_campaign=summer-webinar`
+> `https://example.com/contact/?utm_source=linkedin&utm_medium=paid_social&utm_campaign=summer-webinar`
 
 ---
 
@@ -44,6 +43,7 @@ Example use case -> link:
 - **`source`/`medium` tokens use underscores** where multi-word (`paid_social`, `email_signature`) - that's the platform-recognized form; don't hyphenate them.
 - Don't tag **internal links** (same-site navigation) - it resets the session/attribution. UTMs are for *inbound* links only.
 - Don't manually UTM **Google Ads / YouTube Ads** when auto-tagging (gclid) is on - it double-tags. Use this policy for everything auto-tagging doesn't cover.
+- **Cold-outreach letters/emails that link to an owned site are never sent without UTMs** - even a single-send, single-recipient-list letter. Use `utm_content` to name the individual link within the letter (icon, video, CTA, unsubscribe) so click-through breaks down per link, not just per campaign.
 
 ---
 
@@ -64,7 +64,7 @@ Get `medium` right and the link lands in the correct GA4 default channel automat
 | `qr` | custom group* | QR codes on physical media |
 | `print` | custom group* | printed ads |
 
-\* `pr`, `outreach`, `qr`, `print` are not in GA4's default channel group - they land in **"Unassigned"** unless you add a **custom channel group** (Admin -> Data display -> Channel groups). Recommended one-time group: rule `Session manual medium matches regex ^(pr|outreach|qr|print|offline)$` -> name it e.g. "Earned / Direct-response". Custom groups apply retroactively within the retention window.
+\* `pr`, `outreach`, `qr`, `print` are not in GA4's default channel group - they land in **"Unassigned"** unless you add a **custom channel group** (Admin -> Data display -> Channel groups). Recommended one-time group: first rule `Session medium matches regex ^(pr|outreach|qr|print|offline)$` -> name it e.g. "Earned / Direct-response", **followed by clones of the default channel group's rules** - a custom group replaces the default rather than extending it, so skipping this step dumps all organic/direct/social/email traffic into "Unassigned" too (see `ga4.md`). Custom groups apply retroactively within the retention window.
 
 `utm_source` values (the origin): `instagram` · `facebook` · `linkedin` · `youtube` · `tiktok` · `x` · `github` · `telegram` · `whatsapp` · `google` · `newsletter` · `email_signature` · `linktree` · `<publication-slug>` · `<partner-slug>` · `<list-slug>` (outreach list).
 

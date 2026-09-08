@@ -2,7 +2,6 @@
 
 **Use for:** CRM board read/write, lead and contact management, status updates, column value mutations, scheduled-task tracking
 **Status:** Active
-**Last validated:** 2026-05-24
 
 ## Setup & access
 
@@ -13,6 +12,10 @@
 - Mirror columns return `text: null, value: null` in GraphQL. The real value lives only in `display_value`. Add `... on MirrorValue { display_value }` to your fragment and fall back to it in the mapper.
 
 ## Scars & gotchas
+
+- **`duplicate_board` (`duplicate_board_with_structure`) preserves column AND group ids** - column-id config can carry over verbatim from the source board. The duplicate lands next to the source board (wrong folder if the source was archived); move it with `move_object`.
+
+- **Dashboards can only bind boards at creation** (`create_dashboard` with `board_ids`); there is no API to attach a board to an existing dashboard - widgets on an unbound dashboard render "Connect boards to get started". Recreate instead of patching.
 
 - **Checkbox columns don't filter on `[true]`** - Querying `items_page(query_params: {rules: [{column_id, compare_value: [true]}]})` against a boolean/checkbox column returns **zero items** even when rows are checked, no error, just a silent empty set (this once produced a false "0 conversions" scare mid-event). The checked value is stored as `{"checked":true}` and the display `text` is `"v"`. Reliable path: don't server-side filter checkboxes, page the board and filter client-side on `column_values.value` containing `"true"` (or match `text == "v"`). Reading a single row's checkbox is fine; it's the `query_params` rule that misbehaves.
 
@@ -52,6 +55,12 @@
 
 - **NEVER delete a CRM item during testing unless verified as a test by EXACT phone/id** - a live production CRM receives real inbound leads at any time; a lead created during a test session may be a genuine customer, not your test. In one incident a real inbound lead (a different number than the tester's) was deleted by inferring "that's probably the test" from timing alone. Only delete items whose phone matches the exact number being tested, or ids you explicitly created as tests. When unsure, ask.
 
+- **Compliance posture, for when a regulated or professional client asks.** monday.com holds ISO 27001, 27017, 27018, 27032 and 27701, SOC 1 Type II, SOC 2 Type II and SOC 3, is GDPR-compliant since 2018, publishes a DPA with EU and UK standard contractual clauses, and has an appointed DPO. Trust centre: `trust.monday.com`. EU (Germany) data residency is Enterprise-plan only, treat it as optional insurance rather than a compliance requirement, since a signed DPA with EU SCCs already satisfies Israeli cross-border transfer rules too. Useful anchor when selling into a regulated profession (law, medical, accounting): it carries the same core certifications as Microsoft 365, which the client is almost certainly already using.
+
+- **Checkbox columns read back boolean `true`, but writes send the string `"true"`.** `change_column_value` accepts `{"checked":"true"}`; reading the same column returns `{"checked":true}` (boolean) or `{"checked":false}`. A parser comparing `checked === "true"` silently fails for every checked box, accept both boolean and string forms. This can be the difference between a consent gate actually blocking something and silently letting everything through.
+
+- **Platform outage signature: `500 INTERNAL_SERVER_ERROR` paired with `DOWNSTREAM_SERVICE_ERROR` on every call = a Monday-side incident, not your code.** During one such incident, Monday's own status page confirmed "connectivity issues across the platform" only after failures had already been showing up on our side for about an hour, so don't wait for the status page to go red before suspecting a platform outage. If pollers on Monday-backed flows don't follow the soft-skip rule above, a single outage can produce dozens of failed runs and dozens of alerts, drowning out the one failure that actually matters. Crons: soft-skip on Monday 5xx and alert once per outage, not per cycle. Webhook tasks: keep throwing so the caller retries.
+
 ## Conclusions / best practices
 
 - Always normalize phones to one canonical format (e.g. `972...` digits-only) before any CRM lookup.
@@ -62,9 +71,3 @@
 - For any mutation to a `board_relation` column, always issue it as a second `change_column_value` call after item creation, never inside `create_item`.
 - When adding a new column, backfill existing rows in one atomic script before relying on the column downstream.
 - Multi-account Monday access requires a separate token and a separate MCP instance per account.
-
-## Doc log
-
-- **2026-06-25** - Initial consolidation.
-- **2026-07-01** - Added deleted-item recovery (undo 403 / activity-log reconstruct / Recycle Bin), label-vs-index status setting, and the "never delete unverified CRM items" scar.
-- **2026-07-10** - Added checkbox/boolean `query_params` filter scar (`compare_value: [true]` silently returns 0; filter client-side on `value` instead).

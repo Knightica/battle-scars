@@ -37,6 +37,8 @@
 
 - **Apex DNS cutover to Netlify: A + www CNAME, preserve all existing records** - When cutting an apex domain over to Netlify (A record on Netlify's published IP 75.2.60.5 plus a www CNAME to the `*.netlify.app` target), preserve every existing record in place: any subdomain CNAMEs, Google MX, DKIM, SPF, and platform verification TXT records. Template for any cutover to Netlify where a Google Workspace org is already live on the domain.
 
+- **CNAME add via `dns_made_easy_add_records` with an explicit `ttl` works first try.** `{name: "<sub>", type: "CNAME", value: "<target>.netlify.app.", ttl: 300}` returned the record id immediately and the authoritative NS served it within a minute. Keep the trailing dot on the value.
+
 ## Conclusions / best practices
 
 - Prefer ANAME for apex entries pointing at Netlify (or any CDN that publishes a hostname rather than stable IPs). If the DNS Made Easy API rejects the ANAME, create it via the dashboard, or fall back to an A record on Netlify's published IP (75.2.60.5) plus a www CNAME.
